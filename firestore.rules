@@ -1,0 +1,79 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      // Users can read their own data, admins can read all
+      allow read: if isOwner(userId) || isAdmin();
+      // Only Cloud Functions or Admin can update sensitive fields like balance directly.
+      // We allow users to create their own initial profile if it doesn't exist.
+      allow create: if isOwner(userId) && request.resource.data.balance == 0;
+      // Allow updates to non-sensitive fields (like fcmToken), but forbid balance updates from client.
+      allow update: if isOwner(userId) && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['balance', 'streak']) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Admins Collection
+    match /admins/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      // Nobody can write admins collection from client side, must be done manually via Firebase Console.
+      allow write: if false;
+    }
+
+    // Wallet/Transactions Collection
+    match /transactions/{transactionId} {
+      // Users can read their own transactions
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid || isAdmin();
+      // Transactions must be created securely (e.g. via Cloud Functions or Server, but if client creates, it's just a log)
+      // Actually, for security, clients shouldn't create arbitrary transactions. They should call a Callable function.
+      allow write: if isAdmin();
+    }
+
+    // Withdraw Requests
+    match /withdraw_requests/{requestId} {
+      // Users can read their own requests
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid || isAdmin();
+      // Users can create a withdrawal request if they have enough balance (enforced by function, but we can log request)
+      // However, it's safer to use Cloud Functions for this. If doing it directly:
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      // Only admins can update the status (approve/reject)
+      allow update, delete: if isAdmin();
+    }
+
+    // Tasks & Offers
+    match /tasks/{taskId} {
+      // Anyone logged in can read available tasks
+      allow read: if isAuthenticated();
+      // Only admins can manage tasks
+      allow write: if isAdmin();
+    }
+
+    // Leaderboard (Aggregated view or specific collection)
+    match /leaderboard/{userId} {
+      allow read: if isAuthenticated();
+      // Leaderboard updated by backend functions
+      allow write: if isAdmin();
+    }
+
+    // Settings / Configs
+    match /settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
