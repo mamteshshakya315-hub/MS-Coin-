@@ -19,10 +19,16 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.graphics.Paint
+import android.graphics.Typeface
+import kotlin.math.cos
+import kotlin.math.sin
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -185,6 +191,9 @@ fun SpinWheelScreen(onBack: () -> Unit, viewModel: SpinWheelViewModel = viewMode
         ) {
             Canvas(modifier = Modifier.fillMaxSize().rotate(animateRotation)) {
                 val segmentAngle = 360f / rewards.size
+                val radius = size.minDimension / 2f
+                
+                // Draw colored pie slices
                 for (i in rewards.indices) {
                     drawArc(
                         color = colors[i],
@@ -194,33 +203,95 @@ fun SpinWheelScreen(onBack: () -> Unit, viewModel: SpinWheelViewModel = viewMode
                         style = Fill
                     )
                 }
+
+                // Draw dividing lines between slices
+                for (i in rewards.indices) {
+                    val angleRad = Math.toRadians((i * segmentAngle).toDouble())
+                    val endX = center.x + radius * cos(angleRad).toFloat()
+                    val endY = center.y + radius * sin(angleRad).toFloat()
+                    drawLine(
+                        color = Color(0x80FFFFFF),
+                        start = center,
+                        end = androidx.compose.ui.geometry.Offset(endX, endY),
+                        strokeWidth = 3f
+                    )
+                }
+
+                // Draw outer ring border
+                drawCircle(
+                    color = Color(0xFFFFD700),
+                    radius = radius - 2f,
+                    style = Stroke(width = 8f)
+                )
+
+                // Paint for reward numbers
+                val textPaint = Paint().apply {
+                    color = android.graphics.Color.WHITE
+                    textSize = (radius * 0.17f).coerceIn(24f, 44f)
+                    typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                    textAlign = Paint.Align.CENTER
+                    isAntiAlias = true
+                    setShadowLayer(8f, 0f, 3f, android.graphics.Color.argb(200, 0, 0, 0))
+                }
+
+                // Draw reward numbers on each slice
+                for (i in rewards.indices) {
+                    val midAngle = (i + 0.5f) * segmentAngle
+                    val textRadius = radius * 0.65f
+                    val rewardText = "${rewards[i]}"
+
+                    drawContext.canvas.nativeCanvas.apply {
+                        save()
+                        // Rotate canvas to slice angle
+                        rotate(midAngle, center.x, center.y)
+                        // Draw reward number along the slice
+                        drawText(
+                            rewardText,
+                            center.x + textRadius,
+                            center.y + (textPaint.textSize / 3.2f),
+                            textPaint
+                        )
+                        restore()
+                    }
+                }
             }
             
-            // Indicator at top (270 degrees)
+            // Pointer indicator at the top
             Icon(
                 Icons.Filled.LocationOn,
                 contentDescription = "Pointer",
-                tint = Color.White,
+                tint = Color(0xFFFF5252),
                 modifier = Modifier
-                    .size(48.dp)
-                    .offset(y = (-150).dp)
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-6).dp)
+                    .size(44.dp)
                     .rotate(180f)
             )
             
+            // Center Spin Knob
             Box(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
-                    .background(if (spinsLeft > 0) Color(0xFFFFC107) else Color.Gray)
-                    .clickable(enabled = !isSpinning && !isAdLoading && spinsLeft > 0) {
-                        startSpin()
-                    },
+                    .background(Color(0xFF212130))
+                    .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (isAdLoading) {
-                    CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
-                } else {
-                    Text("SPIN", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(CircleShape)
+                        .background(if (spinsLeft > 0) Color(0xFFFFC107) else Color.Gray)
+                        .clickable(enabled = !isSpinning && !isAdLoading && spinsLeft > 0) {
+                            startSpin()
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isAdLoading) {
+                        CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("SPIN", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
                 }
             }
         }
